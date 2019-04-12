@@ -1,3 +1,8 @@
+./hw2/testcases/dir
+./hw2/testcases/file
+./hw2/testcases/fscanf
+./hw2/testcases/stdio
+
 # Prerequisites
 *.d
 
