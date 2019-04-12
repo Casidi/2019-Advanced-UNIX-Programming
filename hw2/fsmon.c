@@ -4,7 +4,6 @@
 #include <dlfcn.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <libgen.h>
 
 void* load_function(const char* func_name) {
 	void *handle = dlopen("libc.so.6", RTLD_LAZY);
@@ -181,11 +180,25 @@ BEGIN_MON3(fgets, char*, int, FILE*, char*)
 	write_msg("fgets(%s, %d, %s) = \"%s\"\n", p1, p2, get_file_name(p3), ret);
 END_MON
 
-//BEGIN_MONN(fscanf, 
-//END_MON
+static int (*old_fscanf)(FILE*, const char*, ...);
+int fscanf(FILE* stream, const char* format, ...) {
+	va_list vl;
+	va_start(vl, format);
+	int ret = vfscanf(stream, format, vl);
+	write_msg("fscanf(\"%s\", \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
+	va_end(vl);
+	return ret;
+}
 
-//BEGIN_MONN(fprintf, 
-//END_MON
+static int (*old_fprintf)(FILE*, const char*, ...);
+int fprintf(FILE* stream, const char* format, ...) {
+	va_list vl;
+	va_start(vl, format);
+	int ret = vfprintf(stream, format, vl);
+	write_msg("fprintf(\"%s\", \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
+	va_end(vl);
+	return ret;
+}
 
 BEGIN_MON1(chdir, const char*, int)
 	write_msg("chdir(\"%s\") = %d\n", p1, ret);
