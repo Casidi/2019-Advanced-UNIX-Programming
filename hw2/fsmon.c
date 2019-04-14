@@ -289,11 +289,11 @@ BEGIN_MON1(rmdir, const char*, int)
 END_MON
 
 BEGIN_MON3(__xstat, int, const char*, struct stat*, int)
-	write_msg("__xstat(%d, %s, %X) = %d\n", p1, p2, p3, ret);
+	write_msg("__xstat(%d, %s, 0x%X %s) = %d\n", p1, p2, p3, get_verbose_stat(p3), ret);
 END_MON
 
 BEGIN_MON3(__lxstat, int, const char*, struct stat*, int)
-	write_msg("__lxstat(%d, %s, %X %s) = %d\n", p1, p2, p3, get_verbose_stat(p3), ret);
+	write_msg("__lxstat(%d, %s, 0x%X %s) = %d\n", p1, p2, p3, get_verbose_stat(p3), ret);
 END_MON
 
 BEGIN_MON2(fputs_unlocked, void*, FILE*, int)
