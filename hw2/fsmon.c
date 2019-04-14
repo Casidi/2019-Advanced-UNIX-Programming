@@ -66,8 +66,34 @@ char* get_dir_name(DIR* dp) {
 }
 
 char* get_verbose_stat(struct stat* s) {
-	static char buff[64];
-	sprintf(buff, "{mode=%d, size=%ld}", s->st_mode, s->st_size);
+	static char buff[64], type[32];
+	switch(s->st_mode & S_IFMT) {
+		case S_IFBLK:  
+			sprintf(type, "block device");            
+			break;
+    	case S_IFCHR:  
+			sprintf(type, "character device");        
+			break;
+    	case S_IFDIR:  
+			sprintf(type, "directory");               
+			break;
+		case S_IFIFO:  
+			sprintf(type, "FIFO/pipe");               
+			break;
+		case S_IFLNK:  
+			sprintf(type, "symlink");               
+			break;
+		case S_IFREG:  
+			sprintf(type, "regular file");
+			break;
+		case S_IFSOCK: 
+			sprintf(type, "socket");                  
+			break;
+		default:
+			sprintf(type, "unknown");
+	}
+
+	sprintf(buff, "{type=%s, mode=%d, size=%ld}", type, s->st_mode, s->st_size);
 	return buff;
 }
 
@@ -274,3 +300,6 @@ BEGIN_MON2(fputs_unlocked, void*, FILE*, int)
 	write_msg("fputs_unlocked(0x%X, %s) = %d\n", p1, get_file_name(p2), ret);
 END_MON
 
+BEGIN_MON1(fflush, FILE*, int)
+	write_msg("fflush(%s) = %d\n", get_file_name(p1), ret);
+END_MON
