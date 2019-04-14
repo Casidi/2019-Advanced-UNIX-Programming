@@ -10,10 +10,15 @@ all: $(PROGS)
 	chmod +x $@
 
 test: wget cat ls
+	@echo
 	LD_PRELOAD=$(PRELOAD) ./dir > /dev/null
+	@echo
 	LD_PRELOAD=$(PRELOAD) ./file > /dev/null
-	#LD_PRELOAD=$(PRELOAD) ./fscanf
+	@echo
+	echo 8877 | LD_PRELOAD=$(PRELOAD) ./fscanf
+	@echo
 	LD_PRELOAD=$(PRELOAD) ./getline > /dev/null
+	@echo
 	LD_PRELOAD=$(PRELOAD) ./stdio > /dev/null
 
 wget:

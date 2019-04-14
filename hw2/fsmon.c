@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 #include <dlfcn.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -173,11 +174,19 @@ BEGIN_MON4(fwrite_unlocked, const void*, size_t, size_t, FILE*, size_t)
 END_MON
 
 BEGIN_MON1(fgetc, FILE*, int)
-	write_msg("fgetc(%s) = %d\n", get_file_name(p1), ret);
+	if(ret == '\n')
+		write_msg("fgetc(%s) = '\\n'\n", get_file_name(p1));
+	else
+		write_msg("fgetc(%s) = '%c'\n", get_file_name(p1), ret);
 END_MON
 
 BEGIN_MON3(fgets, char*, int, FILE*, char*)
-	write_msg("fgets(%s, %d, %s) = \"%s\"\n", p1, p2, get_file_name(p3), ret);
+	if(ret != NULL && ret[strlen(ret)-1] == '\n') {
+		char no_newline[64];
+		strncpy(no_newline, ret, strlen(ret)-1);
+		write_msg("fgets(0x%X, %d, %s) = \"%s\"\n", p1, p2, get_file_name(p3), no_newline);
+	} else
+		write_msg("fgets(0x%X, %d, %s) = \"%s\"\n", p1, p2, get_file_name(p3), ret);
 END_MON
 
 static int (*old_fscanf)(FILE*, const char*, ...);
@@ -185,7 +194,7 @@ int fscanf(FILE* stream, const char* format, ...) {
 	va_list vl;
 	va_start(vl, format);
 	int ret = vfscanf(stream, format, vl);
-	write_msg("fscanf(\"%s\", \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
+	write_msg("fscanf(%s, \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
 	va_end(vl);
 	return ret;
 }
@@ -195,7 +204,7 @@ int fprintf(FILE* stream, const char* format, ...) {
 	va_list vl;
 	va_start(vl, format);
 	int ret = vfprintf(stream, format, vl);
-	write_msg("fprintf(\"%s\", \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
+	write_msg("fprintf(%s, \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
 	va_end(vl);
 	return ret;
 }
