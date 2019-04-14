@@ -1,6 +1,6 @@
 # The Homework 2 of Advanced UNIX Programming
 
-## Monitored Function
+## Monitored Functions
  - closedir
  - opendir
  - readdir
