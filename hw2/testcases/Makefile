@@ -11,15 +11,15 @@ all: $(PROGS)
 
 test: wget cat ls
 	@echo
-	LD_PRELOAD=$(PRELOAD) ./dir > /dev/null
+	LD_PRELOAD=$(PRELOAD) ./dir
 	@echo
-	LD_PRELOAD=$(PRELOAD) ./file > /dev/null
+	LD_PRELOAD=$(PRELOAD) ./file
 	@echo
 	echo 8877 | LD_PRELOAD=$(PRELOAD) ./fscanf
 	@echo
-	LD_PRELOAD=$(PRELOAD) ./getline > /dev/null
+	LD_PRELOAD=$(PRELOAD) ./getline
 	@echo
-	LD_PRELOAD=$(PRELOAD) ./stdio > /dev/null
+	LD_PRELOAD=$(PRELOAD) ./stdio
 
 wget:
 	LD_PRELOAD=$(PRELOAD) wget -O /dev/null google.com > /dev/null

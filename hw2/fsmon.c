@@ -71,6 +71,20 @@ char* get_verbose_stat(struct stat* s) {
 	return buff;
 }
 
+const char* convert_to_verbose_newline(const char* format) {
+	if(format == NULL)
+		return format;
+
+	static char buff1[128], buff2[132];
+	if(format[strlen(format)-1] == '\n') {
+		strncpy(buff1, format, strlen(format)-1);
+		snprintf(buff2, 132, "%s\\n", buff1);
+		return buff2;
+	} else {
+		return format;
+	}
+}
+
 #define BEGIN_MON1(func,PT1,RT)\
 	static RT (*old_##func)(PT1);\
 	RT func(PT1 p1) {\
@@ -116,7 +130,7 @@ BEGIN_MON2(open, const char*, int, int)
 END_MON
 
 BEGIN_MON3(read, int, void*, size_t, int)
-	write_msg("read(\"%s\", 0x%X, %d) = %d\n", fd_to_filename(p1), p2, p3, ret);
+	write_msg("read(%s, 0x%X, %d) = %d\n", fd_to_filename(p1), p2, p3, ret);
 END_MON
 
 BEGIN_MON3(write, int, void*, size_t, int)
@@ -166,7 +180,7 @@ BEGIN_MON4(fread, void*, size_t, size_t, FILE*, size_t)
 END_MON
 
 BEGIN_MON4(fwrite, const void*, size_t, size_t, FILE*, size_t)
-	write_msg("fwrite(\"%s\", %d, %d, %s) = %d\n", p1,p2,p3,get_file_name(p4),ret);
+	write_msg("fwrite(0x%X, %d, %d, %s) = %d\n", p1,p2,p3,get_file_name(p4),ret);
 END_MON
 
 BEGIN_MON4(fwrite_unlocked, const void*, size_t, size_t, FILE*, size_t)
@@ -181,12 +195,7 @@ BEGIN_MON1(fgetc, FILE*, int)
 END_MON
 
 BEGIN_MON3(fgets, char*, int, FILE*, char*)
-	if(ret != NULL && ret[strlen(ret)-1] == '\n') {
-		char no_newline[64];
-		strncpy(no_newline, ret, strlen(ret)-1);
-		write_msg("fgets(0x%X, %d, %s) = \"%s\"\n", p1, p2, get_file_name(p3), no_newline);
-	} else
-		write_msg("fgets(0x%X, %d, %s) = \"%s\"\n", p1, p2, get_file_name(p3), ret);
+	write_msg("fgets(0x%X, %d, %s) = \"%s\"\n", p1, p2, get_file_name(p3), convert_to_verbose_newline(ret));
 END_MON
 
 static int (*old_fscanf)(FILE*, const char*, ...);
@@ -194,7 +203,7 @@ int fscanf(FILE* stream, const char* format, ...) {
 	va_list vl;
 	va_start(vl, format);
 	int ret = vfscanf(stream, format, vl);
-	write_msg("fscanf(%s, \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
+	write_msg("fscanf(%s, \"%s\", ...) = %d\n", get_file_name(stream), convert_to_verbose_newline(format), ret);
 	va_end(vl);
 	return ret;
 }
@@ -204,7 +213,7 @@ int fprintf(FILE* stream, const char* format, ...) {
 	va_list vl;
 	va_start(vl, format);
 	int ret = vfprintf(stream, format, vl);
-	write_msg("fprintf(%s, \"%s\", ...) = %d\n", get_file_name(stream), format, ret);
+	write_msg("fprintf(%s, \"%s\", ...) = %d\n", get_file_name(stream), convert_to_verbose_newline(format), ret);
 	va_end(vl);
 	return ret;
 }
