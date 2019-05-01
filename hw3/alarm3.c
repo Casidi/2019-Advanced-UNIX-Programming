@@ -11,6 +11,11 @@ int main() {
 	signal(SIGINT, handler);
 	alarm(1);
 	pause();
+	//sleep(3);
+
+	char* msg = "after pause\n";
+	write(1, msg, strlen(msg));
+
 	if(sigpending(&s) < 0) perror("sigpending");
 	if(sigismember(&s, SIGALRM)) {
 		char m[] = "sigalrm is pending.\n";

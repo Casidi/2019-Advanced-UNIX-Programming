@@ -5,7 +5,7 @@ test: mytest alarm1 alarm2 alarm3 jmp1
 mytest: mini
 	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI test.c
 	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o test test.o start.o -L. -L.. -lmini
-	LD_LIBRARY_PATH=. ./test
+	-LD_LIBRARY_PATH=. ./test
 
 alarm1: mini
 	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI alarm1.c
@@ -17,11 +17,11 @@ alarm2: mini
 	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI alarm2.c
 	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o alarm2 alarm2.o start.o -L. -L.. -lmini
 	rm alarm2.o
-	LD_LIBRARY_PATH=. ./alarm2
+	-LD_LIBRARY_PATH=. ./alarm2
 
 alarm3: mini
 	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI alarm3.c
-	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.3 -o alarm3 alarm3.o start.o -L. -L.. -lmini
+	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o alarm3 alarm3.o start.o -L. -L.. -lmini
 	rm alarm3.o
 	LD_LIBRARY_PATH=. ./alarm3
 

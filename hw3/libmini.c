@@ -172,6 +172,34 @@ gid_t	getegid() {
 	WRAPPER_RETval(uid_t);
 }
 
+int sigprocmask(int how, sigset_t *set, sigset_t *oset) {
+	long ret = sys_rt_sigprocmask(how, set, oset, 8);
+	WRAPPER_RETval(int);
+}
+
+int sigpending(sigset_t *set) {
+	long ret = sys_rt_sigpending(set, 8);
+	WRAPPER_RETval(int);
+}
+
+int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact) {
+	long ret = sys_rt_sigaction(sig, act, oldact, 8);
+	WRAPPER_RETval(int);
+}
+
+sighandler_t signal(int signum, sighandler_t handler) {
+	struct sigaction act, oact;
+	act.sa_handler = handler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+
+	if(sigaction(signum, &act, &oact) < 0)
+		return SIG_ERR;
+
+	long ret = (long)oact.sa_handler;
+	WRAPPER_RETptr(sighandler_t);
+}
+
 void bzero(void *s, size_t size) {
 	char *ptr = (char *) s;
 	while(size-- > 0) *ptr++ = '\0';

@@ -8,6 +8,9 @@ typedef int mode_t;
 typedef int uid_t;
 typedef int gid_t;
 typedef int pid_t;
+typedef void (*sighandler_t)(int);
+
+#define __user
 
 #define _NSIG		64
 #define _NSIG_BPW	64
@@ -153,6 +156,9 @@ extern long errno;
 #define	SIG_UNBLOCK   1		 /* Unblock signals.  */
 #define	SIG_SETMASK   2		 /* Set the set of blocked signals.  */
 
+#define SIG_IGN (sighandler_t)1
+#define SIG_ERR (sighandler_t)-1
+
 struct timespec {
 	long	tv_sec;		/* seconds */
 	long	tv_nsec;	/* nanoseconds */
@@ -168,6 +174,48 @@ struct timezone {
 	int	tz_dsttime;	/* type of DST correction */
 };
 
+union sigval {
+	int sival_int;
+	void *sival_ptr;
+};
+typedef struct {
+	int si_signo;
+	int si_code;
+	union sigval si_value;
+	int si_errno;
+	pid_t si_pid;
+	uid_t si_uid;
+	void *si_addr;
+	int si_status;
+	int si_band;
+} siginfo_t;
+/*struct sigaction {
+	sighandler_t sa_handler;
+	void (*sa_sigaction)(int, siginfo_t*, void*);
+	sigset_t sa_mask;
+	int sa_flags;
+	void (*sa_restorer)();
+};*/
+
+struct sigaction {
+	unsigned int sa_flags;
+	sigset_t sa_mask;
+	sighandler_t sa_handler;
+};
+/*struct sigaction
+  {
+    union {
+		sighandler_t sa_handler;
+		void (*sa_sigaction) (int, siginfo_t *, void *);
+    } __sigaction_handler;
+# define sa_handler	__sigaction_handler.sa_handler
+# define sa_sigaction	__sigaction_handler.sa_sigaction
+
+    sigset_t sa_mask;
+    int sa_flags;
+    void (*sa_restorer) (void);
+};*/
+
 /* system calls */
 long sys_read(int fd, char *buf, size_t count);
 long sys_write(int fd, const void *buf, size_t count);
@@ -176,6 +224,8 @@ long sys_close(unsigned int fd);
 long sys_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
 long sys_mprotect(void *addr, size_t len, int prot);
 long sys_munmap(void *addr, size_t len);
+long sys_rt_sigaction(int sig, const struct sigaction *act, struct sigaction *oldact, size_t sigsetsize);
+long sys_rt_sigprocmask(int how, sigset_t *set, sigset_t *oldset, size_t sigsetsize);
 long sys_pipe(int *filedes);
 long sys_dup(int filedes);
 long sys_dup2(int oldfd, int newfd);
@@ -203,6 +253,7 @@ long sys_setuid(uid_t uid);
 long sys_setgid(gid_t gid);
 long sys_geteuid();
 long sys_getegid();
+long sys_rt_sigpending(sigset_t *set, size_t sigsetsize);
 
 /* wrappers */
 ssize_t	read(int fd, char *buf, size_t count);
@@ -240,16 +291,16 @@ int	setgid(gid_t gid);
 uid_t	geteuid();
 gid_t	getegid();
 
+int sigprocmask(int how, sigset_t *set, sigset_t *oset);
+int sigpending(sigset_t *set);
+int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact);
+sighandler_t signal(int signum, sighandler_t handler);
+
 void bzero(void *s, size_t size);
 size_t strlen(const char *s);
 void perror(const char *prefix);
 unsigned int sleep(unsigned int s);
-
-void memset(void* buff, unsigned int val, int size) {
-	char* temp = (char*)buff;
-	for(;size > 0; --size)
-		temp[size-1] = val;
-}
+void *memset(void* buff, int val, size_t size);
 
 static inline void sigemptyset(sigset_t *set) {
 	switch (_NSIG_WORDS) {
