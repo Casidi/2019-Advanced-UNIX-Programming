@@ -62,6 +62,11 @@ int	nanosleep(struct timespec *rqtp, struct timespec *rmtp) {
 	WRAPPER_RETval(int);
 }
 
+int alarm(unsigned int seconds) {
+	long ret = sys_alarm(seconds);
+	WRAPPER_RETval(int);
+}
+
 pid_t	fork(void) {
 	long ret = sys_fork();
 	WRAPPER_RETval(pid_t);

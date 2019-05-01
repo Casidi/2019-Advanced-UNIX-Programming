@@ -9,6 +9,13 @@ typedef int uid_t;
 typedef int gid_t;
 typedef int pid_t;
 
+#define _NSIG		64
+#define _NSIG_BPW	64
+#define _NSIG_WORDS	(_NSIG / _NSIG_BPW)
+typedef struct {
+	unsigned long sig[_NSIG_WORDS];
+} sigset_t;
+
 extern long errno;
 
 #define	NULL		((void*) 0)
@@ -174,6 +181,7 @@ long sys_dup(int filedes);
 long sys_dup2(int oldfd, int newfd);
 long sys_pause();
 long sys_nanosleep(struct timespec *rqtp, struct timespec *rmtp);
+long sys_alarm(unsigned int seconds);
 long sys_fork(void);
 long sys_exit(int error_code) __attribute__ ((noreturn));
 long sys_getcwd(char *buf, size_t size);
@@ -209,6 +217,7 @@ int	dup(int filedes);
 int	dup2(int oldfd, int newfd);
 int	pause();
 int	nanosleep(struct timespec *rqtp, struct timespec *rmtp);
+int alarm(unsigned int seconds);
 pid_t	fork(void);
 void	exit(int error_code);
 char *	getcwd(char *buf, size_t size);
@@ -235,5 +244,57 @@ void bzero(void *s, size_t size);
 size_t strlen(const char *s);
 void perror(const char *prefix);
 unsigned int sleep(unsigned int s);
+
+void memset(void* buff, unsigned int val, int size) {
+	char* temp = (char*)buff;
+	for(;size > 0; --size)
+		temp[size-1] = val;
+}
+
+static inline void sigemptyset(sigset_t *set) {
+	switch (_NSIG_WORDS) {
+	default:
+		memset(set, 0, sizeof(sigset_t));
+		break;
+	case 2: set->sig[1] = 0;
+	case 1: set->sig[0] = 0;
+		break;
+	}
+}
+
+static inline void sigfillset(sigset_t *set) {
+	switch (_NSIG_WORDS) {
+	default:
+		memset(set, -1, sizeof(sigset_t));
+		break;
+	case 2: set->sig[1] = -1;
+	case 1: set->sig[0] = -1;
+		break;
+	}
+}
+
+static inline void sigaddset(sigset_t *set, int _sig) {
+	unsigned long sig = _sig - 1;
+	if(_NSIG_WORDS == 1)
+		set->sig[0] |= 1UL << sig;
+	else
+		set->sig[sig / _NSIG_BPW] |= 1UL << (sig % _NSIG_BPW);
+}
+
+static inline void sigdelset(sigset_t *set, int _sig) {
+	unsigned long sig = _sig - 1;
+	if(_NSIG_WORDS == 1)
+		set->sig[0] &= ~(1UL << sig);
+	else
+		set->sig[sig / _NSIG_BPW] &= ~(1UL << (sig % _NSIG_BPW));
+}
+
+static inline int sigismember(sigset_t *set, int _sig) {
+	unsigned long sig = _sig - 1;
+	if (_NSIG_WORDS == 1)
+		return 1 & (set->sig[0] >> sig);
+	else
+		return 1 & (set->sig[sig / _NSIG_BPW] >> (sig % _NSIG_BPW));
+}
 
 #endif	/* __LIBMINI_H__ */
