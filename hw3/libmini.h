@@ -11,7 +11,7 @@ typedef int pid_t;
 typedef void (*sighandler_t)(int);
 
 // unsigned long under x64 is 8 bytes
-typedef unsigned long sigset_t;
+//typedef unsigned long sigset_t;
 
 extern long errno;
 
@@ -187,6 +187,7 @@ typedef struct {
 	int si_band;
 } siginfo_t;
 
+/*
 struct sigaction {
 	union {
 	  sighandler_t _sa_handler;
@@ -199,7 +200,31 @@ struct sigaction {
 
 #define sa_handler	_u._sa_handler
 #define sa_sigaction	_u._sa_sigaction
+*/
 
+//#define _SIGSET_NWORDS (1024 / (8 * sizeof (unsigned long int)))
+#define _SIGSET_NWORDS 1
+typedef struct
+{
+  unsigned long int __val[_SIGSET_NWORDS];
+} sigset_t;
+
+struct sigaction {
+	sighandler_t sa_handler;
+	unsigned long sa_flags;
+	sigset_t sa_mask;
+	void (*sa_restorer)(void);
+};
+
+struct kernel_sigaction
+{
+  sighandler_t k_sa_handler;
+  unsigned long sa_flags;
+  void (*sa_restorer) (void);
+  /* glibc sigset is larger than kernel expected one, however sigaction
+     passes the kernel expected size on rt_sigaction syscall.  */
+  sigset_t sa_mask;
+};
 
 /*
 struct sigaction {
@@ -231,7 +256,7 @@ long sys_close(unsigned int fd);
 long sys_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off);
 long sys_mprotect(void *addr, size_t len, int prot);
 long sys_munmap(void *addr, size_t len);
-long sys_rt_sigaction(int sig, const struct sigaction *act, struct sigaction *oldact, size_t sigsetsize);
+long sys_rt_sigaction(int sig, const struct kernel_sigaction *act, struct kernel_sigaction *oldact, size_t sigsetsize);
 long sys_rt_sigprocmask(int how, sigset_t *set, sigset_t *oldset, size_t sigsetsize);
 long sys_rt_sigreturn(unsigned long unused);
 long sys_pipe(int *filedes);
@@ -310,31 +335,44 @@ size_t strlen(const char *s);
 void perror(const char *prefix);
 unsigned int sleep(unsigned int s);
 void *memset(void* buff, int val, size_t size);
+void *memcpy(void* dst, void* src, size_t num);
 
 void longjmp(jmp_buf env, int val);
 int setjmp(jmp_buf env);
 
+# define __sigmask(sig) \
+  (((unsigned long int) 1) << (((sig) - 1) % (8 * sizeof (unsigned long int))))
+/* Return the word index for SIG.  */
+# define __sigword(sig) (((sig) - 1) / (8 * sizeof (unsigned long int)))
+
 static inline void sigemptyset(sigset_t *set) {
-	*set = 0;
+	int cnt = _SIGSET_NWORDS;
+	while(--cnt >= 0)
+		set->__val[cnt] = 0;
 }
 
 static inline void sigfillset(sigset_t *set) {
-	*set = -1;
+	int cnt = _SIGSET_NWORDS;
+	while(--cnt >= 0)
+		set->__val[cnt] = ~0UL;
 }
 
-static inline void sigaddset(sigset_t *set, int _sig) {
-	unsigned long sig = _sig - 1;
-	*set |= 1UL << sig;
+static inline void sigaddset(sigset_t *set, int sig) {
+	unsigned long int __mask = __sigmask (sig);
+    unsigned long int __word = __sigword (sig);
+    (set)->__val[__word] |= __mask;
 }
 
-static inline void sigdelset(sigset_t *set, int _sig) {
-	unsigned long sig = _sig - 1;
-	*set &= ~(1UL << sig);
+static inline void sigdelset(sigset_t *set, int sig) {
+	unsigned long int __mask = __sigmask (sig);
+    unsigned long int __word = __sigword (sig);
+    (set)->__val[__word] &= ~__mask;
 }
 
-static inline int sigismember(sigset_t *set, int _sig) {
-	unsigned long sig = _sig - 1;
-	return 1 & (*set >> sig);
+static inline int sigismember(sigset_t *set, int sig) {
+	unsigned long int __mask = __sigmask (sig);
+    unsigned long int __word = __sigword (sig);
+    return (set)->__val[__word] & __mask ? 1 : 0;
 }
 
 #endif	/* __LIBMINI_H__ */

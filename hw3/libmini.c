@@ -173,7 +173,7 @@ gid_t	getegid() {
 }
 
 int sigprocmask(int how, sigset_t *set, sigset_t *oset) {
-	long ret = sys_rt_sigprocmask(how, set, oset, 8);
+	long ret = sys_rt_sigprocmask(how, set, oset, sizeof(sigset_t));
 	WRAPPER_RETval(int);
 }
 
@@ -182,14 +182,19 @@ void sigreturn() {
 }
 
 int sigpending(sigset_t *set) {
-	long ret = sys_rt_sigpending(set, 8);
+	long ret = sys_rt_sigpending(set, sizeof(sigset_t));
 	WRAPPER_RETval(int);
 }
 
 int sigaction(int sig, struct sigaction *act, struct sigaction *oldact) {
-	act->sa_flags |= SA_RESTORER;
-	act->sa_restorer = sigreturn;
-	long ret = sys_rt_sigaction(sig, act, oldact, 8);
+	struct kernel_sigaction kact, koact;
+	kact.k_sa_handler = act->sa_handler;
+    memcpy (&kact.sa_mask, &act->sa_mask, sizeof (sigset_t));
+    kact.sa_flags = act->sa_flags;
+
+	kact.sa_flags |= SA_RESTORER;
+	kact.sa_restorer = sigreturn;
+	long ret = sys_rt_sigaction(sig, &kact, &koact, sizeof(sigset_t));
 	WRAPPER_RETval(int);
 }
 
@@ -215,6 +220,13 @@ size_t strlen(const char *s) {
 	size_t count = 0;
 	while(*s++) count++;
 	return count;
+}
+
+void *memcpy(void* dst, void* src, size_t num) {
+	int i;
+	for(i = 0; i < num; ++i)
+		((char*)dst)[i] = ((char*)src)[i];
+	return dst;
 }
 
 void longjmp(jmp_buf env, int val) {
