@@ -27,6 +27,7 @@ extern	errno
 	gensys  11, munmap
 	gensys  13, rt_sigaction
 	gensys	14, rt_sigprocmask
+	gensys  15, rt_sigreturn
 	gensys  22, pipe
 	gensys  32, dup
 	gensys  33, dup2

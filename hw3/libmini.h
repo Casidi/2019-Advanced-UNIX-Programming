@@ -10,14 +10,8 @@ typedef int gid_t;
 typedef int pid_t;
 typedef void (*sighandler_t)(int);
 
-#define __user
-
-#define _NSIG		64
-#define _NSIG_BPW	64
-#define _NSIG_WORDS	(_NSIG / _NSIG_BPW)
-typedef struct {
-	unsigned long sig[_NSIG_WORDS];
-} sigset_t;
+// unsigned long under x64 is 8 bytes
+typedef unsigned long sigset_t;
 
 extern long errno;
 
@@ -158,6 +152,9 @@ extern long errno;
 
 #define SIG_IGN (sighandler_t)1
 #define SIG_ERR (sighandler_t)-1
+#define SA_ONESHOT 0x10
+#define SA_NOMASK 0x08
+#define SA_RESTORER 0x4000000
 
 struct timespec {
 	long	tv_sec;		/* seconds */
@@ -189,32 +186,42 @@ typedef struct {
 	int si_status;
 	int si_band;
 } siginfo_t;
-/*struct sigaction {
-	sighandler_t sa_handler;
-	void (*sa_sigaction)(int, siginfo_t*, void*);
-	sigset_t sa_mask;
-	int sa_flags;
-	void (*sa_restorer)();
-};*/
 
 struct sigaction {
-	unsigned int sa_flags;
+	union {
+	  sighandler_t _sa_handler;
+	  void (*_sa_sigaction)(int, siginfo_t *, void *);
+	} _u;
 	sigset_t sa_mask;
-	sighandler_t sa_handler;
+	unsigned long sa_flags;
+	void (*sa_restorer)(void);
 };
-/*struct sigaction
-  {
-    union {
-		sighandler_t sa_handler;
-		void (*sa_sigaction) (int, siginfo_t *, void *);
-    } __sigaction_handler;
-# define sa_handler	__sigaction_handler.sa_handler
-# define sa_sigaction	__sigaction_handler.sa_sigaction
 
-    sigset_t sa_mask;
-    int sa_flags;
-    void (*sa_restorer) (void);
+#define sa_handler	_u._sa_handler
+#define sa_sigaction	_u._sa_sigaction
+
+
+/*
+struct sigaction {
+	sighandler_t sa_handler;
+	unsigned long sa_flags;
+#ifdef SA_RESTORER
+	void (*sa_restorer)(void);
+#endif
+	sigset_t sa_mask;
+};
+*/
+/*
+struct sigaction {
+	unsigned int sa_flags;
+	sighandler_t sa_handler;
+	sigset_t sa_mask;
 };*/
+
+typedef struct jmp_buf_s {
+	long long reg[8];
+	sigset_t mask;
+} jmp_buf[1];
 
 /* system calls */
 long sys_read(int fd, char *buf, size_t count);
@@ -226,6 +233,7 @@ long sys_mprotect(void *addr, size_t len, int prot);
 long sys_munmap(void *addr, size_t len);
 long sys_rt_sigaction(int sig, const struct sigaction *act, struct sigaction *oldact, size_t sigsetsize);
 long sys_rt_sigprocmask(int how, sigset_t *set, sigset_t *oldset, size_t sigsetsize);
+long sys_rt_sigreturn(unsigned long unused);
 long sys_pipe(int *filedes);
 long sys_dup(int filedes);
 long sys_dup2(int oldfd, int newfd);
@@ -293,8 +301,9 @@ gid_t	getegid();
 
 int sigprocmask(int how, sigset_t *set, sigset_t *oset);
 int sigpending(sigset_t *set);
-int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact);
+int sigaction(int sig, struct sigaction *act, struct sigaction *oldact);
 sighandler_t signal(int signum, sighandler_t handler);
+void sigreturn();
 
 void bzero(void *s, size_t size);
 size_t strlen(const char *s);
@@ -302,50 +311,30 @@ void perror(const char *prefix);
 unsigned int sleep(unsigned int s);
 void *memset(void* buff, int val, size_t size);
 
+void longjmp(jmp_buf env, int val);
+int setjmp(jmp_buf env);
+
 static inline void sigemptyset(sigset_t *set) {
-	switch (_NSIG_WORDS) {
-	default:
-		memset(set, 0, sizeof(sigset_t));
-		break;
-	case 2: set->sig[1] = 0;
-	case 1: set->sig[0] = 0;
-		break;
-	}
+	*set = 0;
 }
 
 static inline void sigfillset(sigset_t *set) {
-	switch (_NSIG_WORDS) {
-	default:
-		memset(set, -1, sizeof(sigset_t));
-		break;
-	case 2: set->sig[1] = -1;
-	case 1: set->sig[0] = -1;
-		break;
-	}
+	*set = -1;
 }
 
 static inline void sigaddset(sigset_t *set, int _sig) {
 	unsigned long sig = _sig - 1;
-	if(_NSIG_WORDS == 1)
-		set->sig[0] |= 1UL << sig;
-	else
-		set->sig[sig / _NSIG_BPW] |= 1UL << (sig % _NSIG_BPW);
+	*set |= 1UL << sig;
 }
 
 static inline void sigdelset(sigset_t *set, int _sig) {
 	unsigned long sig = _sig - 1;
-	if(_NSIG_WORDS == 1)
-		set->sig[0] &= ~(1UL << sig);
-	else
-		set->sig[sig / _NSIG_BPW] &= ~(1UL << (sig % _NSIG_BPW));
+	*set &= ~(1UL << sig);
 }
 
 static inline int sigismember(sigset_t *set, int _sig) {
 	unsigned long sig = _sig - 1;
-	if (_NSIG_WORDS == 1)
-		return 1 & (set->sig[0] >> sig);
-	else
-		return 1 & (set->sig[sig / _NSIG_BPW] >> (sig % _NSIG_BPW));
+	return 1 & (*set >> sig);
 }
 
 #endif	/* __LIBMINI_H__ */

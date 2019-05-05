@@ -177,12 +177,18 @@ int sigprocmask(int how, sigset_t *set, sigset_t *oset) {
 	WRAPPER_RETval(int);
 }
 
+void sigreturn() {
+	sys_rt_sigreturn(0);
+}
+
 int sigpending(sigset_t *set) {
 	long ret = sys_rt_sigpending(set, 8);
 	WRAPPER_RETval(int);
 }
 
-int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact) {
+int sigaction(int sig, struct sigaction *act, struct sigaction *oldact) {
+	act->sa_flags |= SA_RESTORER;
+	act->sa_restorer = sigreturn;
 	long ret = sys_rt_sigaction(sig, act, oldact, 8);
 	WRAPPER_RETval(int);
 }
@@ -191,7 +197,7 @@ sighandler_t signal(int signum, sighandler_t handler) {
 	struct sigaction act, oact;
 	act.sa_handler = handler;
 	sigemptyset(&act.sa_mask);
-	act.sa_flags = 0;
+	act.sa_flags = SA_ONESHOT | SA_NOMASK;
 
 	if(sigaction(signum, &act, &oact) < 0)
 		return SIG_ERR;
@@ -209,6 +215,12 @@ size_t strlen(const char *s) {
 	size_t count = 0;
 	while(*s++) count++;
 	return count;
+}
+
+void longjmp(jmp_buf env, int val) {
+}
+
+int setjmp(jmp_buf env) {
 }
 
 #define	PERRMSG_MIN	0
