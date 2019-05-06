@@ -244,36 +244,39 @@ void *memcpy(void* dst, void* src, size_t num) {
 __attribute__((noinline, noclone, optimize(0)))
 void longjmp(jmp_buf env, int val) {
 	__asm__(
-            "    mov  %rsi, %rax #get int val in eax, passed as argument 2 on stack\n"
+            "    mov  %rsi, %rax\n"
             "    test    %rax,%rax # is int val == 0?\n"
             "    jnz 1f\n"
             "    inc     %rax      # if so, eax++\n"
             "1:\n"
-            "    mov   (%rdi),%rbx # ebx = jmp_buf[0]\n"
-            "    mov  8(%rdi),%rsi # esi = jmp_buf[1]\n"
-            "    mov  16(%rdi),%rdi #edi = jmp_buf[2]\n"
-            "    mov 24(%rdi),%rbp # ebp = jmp_buf[3]\n"
-            "    mov 32(%rdi),%rcx # ecx = jmp_buf[4]\n"
-            "    mov     %rcx,%rsp # esp = ecx\n"
-            "    mov 40(%rdi),%rcx # ecx = jmp_buf[5]\n"
-            "    jmp *%rcx         # eip = ecx");
+            "    mov   (%rdi),%rbx # rbx = jmp_buf[0]\n"
+            "    mov  8(%rdi),%rsp # rsp = jmp_buf[1]\n"
+            "    mov  16(%rdi),%rbp #rbp = jmp_buf[2]\n"
+            "    mov 24(%rdi),%r12 # r12 = jmp_buf[3]\n"
+            "    mov 32(%rdi),%r13 # r13 = jmp_buf[4]\n"
+            "    mov 40(%rdi),%r14 # r14 = jmp_buf[5]\n"
+            "    mov 48(%rdi),%r15 # r15 = jmp_buf[6]\n"
+			"    mov 56(%rdi), %rcx # rcx = jmp_buf[7]\n"
+            "    jmp *%rcx         # eip = rcx"
+	);
 }
 
 __attribute__((noinline, noclone, returns_twice, optimize(0)))
 int setjmp(jmp_buf env) {
 	__asm__(
-             "    mov    %rbx, (%rdi)   # jmp_buf[0] = ebx\n"
-             "    mov    %rsi, 8(%rdi)  # jmp_buf[1] = esi\n"
-             "    mov    %rdi, 16(%rdi)  # jmp_buf[2] = edi\n"
-             "    mov    (%rbp), %rcx\n"
-             "    mov    %rcx, 24(%rdi) # jmp_buf[3] = ebp\n"
-             "    lea    16(%rbp), %rcx  # get previous value of esp, before call\n"
-             "    mov    %rcx, 32(%rdi) # jmp_buf[4] = esp before call\n"
-             "    mov    8(%rbp), %rcx  # get saved caller eip from top of stack\n"
-             "    mov    %rcx, 40(%rdi) #jmp_buf[5] = saved eip\n"
+             "    mov    %rbx, (%rdi)   # jmp_buf[0] = rbx\n"
+             "    lea    16(%rbp), %rax  # get previous value of esp, before call\n"
+             "    mov    %rax, 8(%rdi) # jmp_buf[1] = rsp before call\n"
+             "    mov    (%rbp), %rax\n"
+             "    mov    %rax, 16(%rdi) # jmp_buf[2] = rbp\n"
+			 "    mov    %r12, 24(%rdi) # jmp_buf[3] = r12\n"
+			 "    mov    %r13, 32(%rdi) # jmp_buf[4] = r13\n"
+			 "    mov    %r14, 40(%rdi) # jmp_buf[5] = r14\n"
+			 "    mov    %r15, 48(%rdi) # jmp_buf[6] = r15\n"
+             "    mov    8(%rbp), %rax  # get saved caller eip from top of stack\n"
+             "    mov    %rax, 56(%rdi) #jmp_buf[7] = saved eip\n"
              "    xor    %rax, %rax     #eax = 0\n"
      );
-
 	return 0;
 }
 
