@@ -177,25 +177,25 @@ int sigprocmask(int how, sigset_t *set, sigset_t *oset) {
 	WRAPPER_RETval(int);
 }
 
-void sigreturn() {
-	sys_rt_sigreturn(0);
-}
-
 int sigpending(sigset_t *set) {
 	long ret = sys_rt_sigpending(set, sizeof(sigset_t));
 	WRAPPER_RETval(int);
 }
 
+//don't wrap the sigreturn system call, it causes problems
+void restore_rt();
+asm ("restore_rt:mov $15, %rax\nsyscall");
+
 #define SET_SA_RESTORER(kact, act)                        \
   (kact)->sa_flags = (act)->sa_flags | SA_RESTORER;        \
-  (kact)->sa_restorer = &sigreturn
+  (kact)->sa_restorer = &restore_rt
 #define RESET_SA_RESTORER(act, kact)                         \
   (act)->sa_restorer = (kact)->sa_restorer
 
 int sigaction(int sig, struct sigaction *act, struct sigaction *oact) {
 	struct kernel_sigaction kact, koact;
 	kact.k_sa_handler = act->sa_handler;
-    memcpy (&kact.sa_mask, &act->sa_mask, sizeof (sigset_t));
+    memcpy (&kact.sa_mask, &act->sa_mask, sizeof(sigset_t));
     kact.sa_flags = act->sa_flags;
 	SET_SA_RESTORER (&kact, act);
 

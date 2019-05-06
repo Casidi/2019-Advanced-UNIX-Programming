@@ -203,10 +203,10 @@ struct sigaction {
 
 struct kernel_sigaction
 {
-  sighandler_t k_sa_handler;
-  unsigned long sa_flags;
-  void (*sa_restorer) (void);
-  sigset_t sa_mask;
+	sighandler_t k_sa_handler;
+	unsigned long sa_flags;
+	void (*sa_restorer) (void);
+	sigset_t sa_mask;
 };
 
 typedef struct jmp_buf_s {

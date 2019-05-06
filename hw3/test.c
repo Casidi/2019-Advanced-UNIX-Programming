@@ -6,7 +6,6 @@ void handler(int s) {
 }
 
 int main(int argc, char** argv) {
-	char *msg = "test hello!!!\n";
 	signal(SIGALRM, handler);
 	perror("");
 	alarm(2);
