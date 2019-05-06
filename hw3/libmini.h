@@ -187,21 +187,6 @@ typedef struct {
 	int si_band;
 } siginfo_t;
 
-/*
-struct sigaction {
-	union {
-	  sighandler_t _sa_handler;
-	  void (*_sa_sigaction)(int, siginfo_t *, void *);
-	} _u;
-	sigset_t sa_mask;
-	unsigned long sa_flags;
-	void (*sa_restorer)(void);
-};
-
-#define sa_handler	_u._sa_handler
-#define sa_sigaction	_u._sa_sigaction
-*/
-
 //#define _SIGSET_NWORDS (1024 / (8 * sizeof (unsigned long int)))
 #define _SIGSET_NWORDS 1
 typedef struct
@@ -211,8 +196,8 @@ typedef struct
 
 struct sigaction {
 	sighandler_t sa_handler;
-	unsigned long sa_flags;
 	sigset_t sa_mask;
+	unsigned long sa_flags;
 	void (*sa_restorer)(void);
 };
 
@@ -221,31 +206,12 @@ struct kernel_sigaction
   sighandler_t k_sa_handler;
   unsigned long sa_flags;
   void (*sa_restorer) (void);
-  /* glibc sigset is larger than kernel expected one, however sigaction
-     passes the kernel expected size on rt_sigaction syscall.  */
   sigset_t sa_mask;
 };
 
-/*
-struct sigaction {
-	sighandler_t sa_handler;
-	unsigned long sa_flags;
-#ifdef SA_RESTORER
-	void (*sa_restorer)(void);
-#endif
-	sigset_t sa_mask;
-};
-*/
-/*
-struct sigaction {
-	unsigned int sa_flags;
-	sighandler_t sa_handler;
-	sigset_t sa_mask;
-};*/
-
 typedef struct jmp_buf_s {
 	long long reg[8];
-	sigset_t mask;
+	//sigset_t mask;
 } jmp_buf[1];
 
 /* system calls */

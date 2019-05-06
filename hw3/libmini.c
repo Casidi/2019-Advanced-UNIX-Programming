@@ -186,15 +186,27 @@ int sigpending(sigset_t *set) {
 	WRAPPER_RETval(int);
 }
 
-int sigaction(int sig, struct sigaction *act, struct sigaction *oldact) {
+#define SET_SA_RESTORER(kact, act)                        \
+  (kact)->sa_flags = (act)->sa_flags | SA_RESTORER;        \
+  (kact)->sa_restorer = &sigreturn
+#define RESET_SA_RESTORER(act, kact)                         \
+  (act)->sa_restorer = (kact)->sa_restorer
+
+int sigaction(int sig, struct sigaction *act, struct sigaction *oact) {
 	struct kernel_sigaction kact, koact;
 	kact.k_sa_handler = act->sa_handler;
     memcpy (&kact.sa_mask, &act->sa_mask, sizeof (sigset_t));
     kact.sa_flags = act->sa_flags;
+	SET_SA_RESTORER (&kact, act);
 
-	kact.sa_flags |= SA_RESTORER;
-	kact.sa_restorer = sigreturn;
 	long ret = sys_rt_sigaction(sig, &kact, &koact, sizeof(sigset_t));
+	if (oact && ret >= 0) {
+		oact->sa_handler = koact.k_sa_handler;
+		memcpy (&oact->sa_mask, &koact.sa_mask, sizeof (sigset_t));
+		oact->sa_flags = koact.sa_flags;
+		RESET_SA_RESTORER (oact, &koact);
+	}
+
 	WRAPPER_RETval(int);
 }
 
@@ -229,10 +241,40 @@ void *memcpy(void* dst, void* src, size_t num) {
 	return dst;
 }
 
+__attribute__((noinline, noclone, optimize(0)))
 void longjmp(jmp_buf env, int val) {
+	__asm__(
+            "    mov  %rsi, %rax #get int val in eax, passed as argument 2 on stack\n"
+            "    test    %rax,%rax # is int val == 0?\n"
+            "    jnz 1f\n"
+            "    inc     %rax      # if so, eax++\n"
+            "1:\n"
+            "    mov   (%rdi),%rbx # ebx = jmp_buf[0]\n"
+            "    mov  8(%rdi),%rsi # esi = jmp_buf[1]\n"
+            "    mov  16(%rdi),%rdi #edi = jmp_buf[2]\n"
+            "    mov 24(%rdi),%rbp # ebp = jmp_buf[3]\n"
+            "    mov 32(%rdi),%rcx # ecx = jmp_buf[4]\n"
+            "    mov     %rcx,%rsp # esp = ecx\n"
+            "    mov 40(%rdi),%rcx # ecx = jmp_buf[5]\n"
+            "    jmp *%rcx         # eip = ecx");
 }
 
+__attribute__((noinline, noclone, returns_twice, optimize(0)))
 int setjmp(jmp_buf env) {
+	__asm__(
+             "    mov    %rbx, (%rdi)   # jmp_buf[0] = ebx\n"
+             "    mov    %rsi, 8(%rdi)  # jmp_buf[1] = esi\n"
+             "    mov    %rdi, 16(%rdi)  # jmp_buf[2] = edi\n"
+             "    mov    (%rbp), %rcx\n"
+             "    mov    %rcx, 24(%rdi) # jmp_buf[3] = ebp\n"
+             "    lea    16(%rbp), %rcx  # get previous value of esp, before call\n"
+             "    mov    %rcx, 32(%rdi) # jmp_buf[4] = esp before call\n"
+             "    mov    8(%rbp), %rcx  # get saved caller eip from top of stack\n"
+             "    mov    %rcx, 40(%rdi) #jmp_buf[5] = saved eip\n"
+             "    xor    %rax, %rax     #eax = 0\n"
+     );
+
+	return 0;
 }
 
 #define	PERRMSG_MIN	0
