@@ -244,6 +244,13 @@ void *memcpy(void* dst, void* src, size_t num) {
 __attribute__((noinline, noclone, optimize(0)))
 void longjmp(jmp_buf env, int val) {
 	__asm__(
+		"push %rdi\n"
+		"push %rsi\n"
+	);
+	sigprocmask(SIG_BLOCK, &env->mask, NULL);
+	__asm__(
+			"    pop %rsi\n"
+			"    pop %rdi\n"
             "    mov  %rsi, %rax\n"
             "    test    %rax,%rax # is int val == 0?\n"
             "    jnz 1f\n"
@@ -277,6 +284,7 @@ int setjmp(jmp_buf env) {
              "    mov    %rax, 56(%rdi) #jmp_buf[7] = saved eip\n"
              "    xor    %rax, %rax     #eax = 0\n"
      );
+	sigprocmask(SIG_UNBLOCK, NULL, &env->mask);
 	return 0;
 }
 

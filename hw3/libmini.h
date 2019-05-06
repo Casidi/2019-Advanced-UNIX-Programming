@@ -211,7 +211,7 @@ struct kernel_sigaction
 
 typedef struct jmp_buf_s {
 	long long reg[8];
-	//sigset_t mask;
+	sigset_t mask;
 } jmp_buf[1];
 
 /* system calls */
