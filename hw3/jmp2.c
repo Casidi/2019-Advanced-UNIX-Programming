@@ -11,7 +11,6 @@ int main() {
 	sigemptyset(&set);
 	sigaddset(&set, SIGALRM);
 	sigprocmask(SIG_BLOCK, &set, NULL);
-	signal(SIGALRM, SIG_IGN);
 
 	volatile int has_jumped = 0;
 	PRINT("before setjmp\n");
@@ -20,6 +19,7 @@ int main() {
 		has_jumped = 1;
 		
 		sigset_t set_after_jmp;
+		sigemptyset(&set_after_jmp);
 		sigprocmask(0, NULL, &set_after_jmp);
 		if(sigismember(&set_after_jmp, SIGALRM))
 			PRINT("PASS: The sigmask is preserved\n")
