@@ -9,9 +9,7 @@ typedef int uid_t;
 typedef int gid_t;
 typedef int pid_t;
 typedef void (*sighandler_t)(int);
-
-// unsigned long under x64 is 8 bytes
-//typedef unsigned long sigset_t;
+typedef unsigned long int sigset_t;
 
 extern long errno;
 
@@ -171,29 +169,6 @@ struct timezone {
 	int	tz_dsttime;	/* type of DST correction */
 };
 
-union sigval {
-	int sival_int;
-	void *sival_ptr;
-};
-typedef struct {
-	int si_signo;
-	int si_code;
-	union sigval si_value;
-	int si_errno;
-	pid_t si_pid;
-	uid_t si_uid;
-	void *si_addr;
-	int si_status;
-	int si_band;
-} siginfo_t;
-
-//#define _SIGSET_NWORDS (1024 / (8 * sizeof (unsigned long int)))
-#define _SIGSET_NWORDS 1
-typedef struct
-{
-  unsigned long int __val[_SIGSET_NWORDS];
-} sigset_t;
-
 struct sigaction {
 	sighandler_t sa_handler;
 	sigset_t sa_mask;
@@ -306,39 +281,24 @@ void *memcpy(void* dst, void* src, size_t num);
 void longjmp(jmp_buf env, int val);
 int setjmp(jmp_buf env);
 
-# define __sigmask(sig) \
-  (((unsigned long int) 1) << (((sig) - 1) % (8 * sizeof (unsigned long int))))
-/* Return the word index for SIG.  */
-# define __sigword(sig) (((sig) - 1) / (8 * sizeof (unsigned long int)))
-
 static inline void sigemptyset(sigset_t *set) {
-	int cnt = _SIGSET_NWORDS;
-	while(--cnt >= 0)
-		set->__val[cnt] = 0;
+	*set = 0;
 }
 
 static inline void sigfillset(sigset_t *set) {
-	int cnt = _SIGSET_NWORDS;
-	while(--cnt >= 0)
-		set->__val[cnt] = ~0UL;
+	*set = ~0UL;
 }
 
 static inline void sigaddset(sigset_t *set, int sig) {
-	unsigned long int __mask = __sigmask (sig);
-    unsigned long int __word = __sigword (sig);
-    (set)->__val[__word] |= __mask;
+	*set |= 1UL << (sig - 1);
 }
 
 static inline void sigdelset(sigset_t *set, int sig) {
-	unsigned long int __mask = __sigmask (sig);
-    unsigned long int __word = __sigword (sig);
-    (set)->__val[__word] &= ~__mask;
+	*set &= ~(1UL << (sig - 1));
 }
 
 static inline int sigismember(sigset_t *set, int sig) {
-	unsigned long int __mask = __sigmask (sig);
-    unsigned long int __word = __sigword (sig);
-    return (set)->__val[__word] & __mask ? 1 : 0;
+	return *set & (1UL << (sig - 1))? 1: 0;
 }
 
 #endif	/* __LIBMINI_H__ */

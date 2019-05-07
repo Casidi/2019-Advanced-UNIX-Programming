@@ -182,7 +182,7 @@ int sigpending(sigset_t *set) {
 	WRAPPER_RETval(int);
 }
 
-//don't wrap the sigreturn system call, it causes problems
+//Don't wrap the sigreturn system call as it causes problems
 void restore_rt();
 asm ("restore_rt:mov $15, %rax\nsyscall");
 
@@ -264,7 +264,7 @@ void longjmp(jmp_buf env, int val) {
             "    mov 40(%rdi),%r14 # r14 = jmp_buf[5]\n"
             "    mov 48(%rdi),%r15 # r15 = jmp_buf[6]\n"
 			"    mov 56(%rdi), %rcx # rcx = jmp_buf[7]\n"
-            "    jmp *%rcx         # eip = rcx"
+            "    jmp *%rcx         # rip = rcx"
 	);
 }
 
@@ -272,7 +272,7 @@ __attribute__((noinline, noclone, returns_twice, optimize(0)))
 int setjmp(jmp_buf env) {
 	__asm__(
              "    mov    %rbx, (%rdi)   # jmp_buf[0] = rbx\n"
-             "    lea    16(%rbp), %rax  # get previous value of esp, before call\n"
+             "    lea    16(%rbp), %rax  # get previous value of rsp, before call\n"
              "    mov    %rax, 8(%rdi) # jmp_buf[1] = rsp before call\n"
              "    mov    (%rbp), %rax\n"
              "    mov    %rax, 16(%rdi) # jmp_buf[2] = rbp\n"
@@ -280,9 +280,8 @@ int setjmp(jmp_buf env) {
 			 "    mov    %r13, 32(%rdi) # jmp_buf[4] = r13\n"
 			 "    mov    %r14, 40(%rdi) # jmp_buf[5] = r14\n"
 			 "    mov    %r15, 48(%rdi) # jmp_buf[6] = r15\n"
-             "    mov    8(%rbp), %rax  # get saved caller eip from top of stack\n"
-             "    mov    %rax, 56(%rdi) #jmp_buf[7] = saved eip\n"
-             "    xor    %rax, %rax     #eax = 0\n"
+             "    mov    8(%rbp), %rax  # get saved caller rip from top of stack\n"
+             "    mov    %rax, 56(%rdi) #jmp_buf[7] = saved rip\n"
      );
 	sigprocmask(SIG_UNBLOCK, NULL, &env->mask);
 	return 0;
