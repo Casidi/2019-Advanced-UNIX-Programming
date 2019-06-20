@@ -1,7 +1,13 @@
-all:
-	gcc -c -o elftool.o elftool.c
+all: elftool.o
 	gcc -o sdb main.c elftool.o -lelf
 
-test:
-	echo "load sample/hello64\nrun\nload test\nrun\nvmmap\nexit\n" | ./sdb
-	echo
+test: elftool.o test.c
+	gcc -o test test.c elftool.o -lelf
+	./test
+
+elftool.o:
+	gcc -c -o elftool.o elftool.c
+	
+clean:
+	rm -f *.o
+	rm -f test sdb
