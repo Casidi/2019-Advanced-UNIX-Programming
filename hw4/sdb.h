@@ -10,24 +10,46 @@
 #include <capstone/capstone.h>
 #include "elftool.h"
 
+#define MAX_BREAK 10
+
+typedef struct {
+	int is_used;
+	unsigned long long addr;
+	unsigned long long original_word;
+} bp_t;
+
 typedef struct {
 	elf_handle_t* eh;
 	elf_strtab_t* strtab;
 	csh cshandle;
 	char path[128];
 	pid_t pid;
+	bp_t breaks[MAX_BREAK];
 } SDB;
 
 SDB* sdb_create() {
-	elf_init();
-
 	SDB* sdb = (SDB*)malloc(sizeof(SDB));
+
+	elf_init();
 	cs_open(CS_ARCH_X86, CS_MODE_64, &(sdb->cshandle));
 	sdb->eh = NULL;
 	sdb->strtab = NULL;
 	sdb->path[0] = 0;
 	sdb->pid = -1;
+
+	int i;
+	for(i = 0; i < MAX_BREAK; ++i)
+		sdb->breaks[i].is_used = 0;
+
 	return sdb;
+}
+
+int sdb_is_loaded(SDB* sdb) {
+	return strcmp(sdb->path, "") != 0;
+}
+
+int sdb_is_running(SDB* sdb) {
+	return sdb->pid != -1;
 }
 
 void sdb_load(SDB* sdb, char* new_filename) {
@@ -55,8 +77,8 @@ void sdb_load(SDB* sdb, char* new_filename) {
 		return;
 	}
 
-	for(int i = 0; i < (sdb->eh)->shnum; i++) {
-		if(strcmp(&(sdb->strtab)->data[(sdb->eh)->shdr[i].name], ".text") == 0) {
+	for(int i = 1; i < sdb->eh->shnum; i++) {
+		if(strcmp(&(sdb->strtab->data[sdb->eh->shdr[i].name]), ".text") == 0) {
 			printf("** program '%s' loaded. entry point 0x%lx, "
 				"vaddr 0x%llx, offset 0x%llx, size 0x%llx\n",
 				new_filename, (sdb->eh)->entrypoint, (sdb->eh)->shdr[i].addr, 
@@ -107,15 +129,15 @@ void print_vm_maps(char* line) {
 }
 
 void sdb_vmmap(SDB* sdb) {
-	if(strcmp(sdb->path, "") == 0) {
+	if(!sdb_is_loaded(sdb)) {
 		printf("No program loaded\n");
 		return;
 	} else {
 		elf_handle_t *eh = sdb->eh;
 		elf_strtab_t *tab = sdb->strtab;
-		if(sdb->pid == -1) {
+		if(!sdb_is_running(sdb)) {
 			//not running
-			for(int i = 0; i < eh->shnum; i++) {
+			for(int i = 1; i < eh->shnum; i++) {
 				if(strcmp(&tab->data[eh->shdr[i].name], ".text") == 0) {
 					printf("%016llx-%016llx r-x %llx       %s\n",
 						eh->shdr[i].addr, eh->shdr[i].addr+eh->shdr[i].size,
@@ -140,7 +162,7 @@ void sdb_vmmap(SDB* sdb) {
 }
 
 void sdb_start(SDB* sdb) {
-	if(strcmp(sdb->path, "") == 0) {
+	if(!sdb_is_loaded(sdb)) {
 		printf("No program loaded\n");
 		return;
 	}
@@ -169,10 +191,31 @@ void sdb_start(SDB* sdb) {
 	}
 }
 
+#define MATCH_REG_NAME(r) if(strcmp(reg_name, #r) == 0) reg_val = regs.r;
 void sdb_get(SDB* sdb, char* reg_name) {
 	struct user_regs_struct regs;
 	ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
-	printf("%s = %llu (0x%llx)\n", reg_name, regs.rip, regs.rip);
+
+	unsigned long long reg_val;
+	MATCH_REG_NAME(rax);
+	MATCH_REG_NAME(rbx);
+	MATCH_REG_NAME(rcx);
+	MATCH_REG_NAME(rdx);
+	MATCH_REG_NAME(r8);
+	MATCH_REG_NAME(r9);
+	MATCH_REG_NAME(r10);
+	MATCH_REG_NAME(r11);
+	MATCH_REG_NAME(r12);
+	MATCH_REG_NAME(r13);
+	MATCH_REG_NAME(r14);
+	MATCH_REG_NAME(r15);
+	MATCH_REG_NAME(rdi);
+	MATCH_REG_NAME(rsi);
+	MATCH_REG_NAME(rbp);
+	MATCH_REG_NAME(rsp);
+	MATCH_REG_NAME(rip);
+	MATCH_REG_NAME(eflags);
+	printf("%s = %llu (0x%llx)\n", reg_name, reg_val, reg_val);
 }
 
 void sdb_getregs(SDB* sdb) {
@@ -186,13 +229,13 @@ void sdb_getregs(SDB* sdb) {
 }
 
 void sdb_run(SDB* sdb) {
-	if(strcmp(sdb->path, "") == 0) {
+	if(!sdb_is_loaded(sdb)) {
 		printf("No program loaded\n");
 		return;
 	}
 
 	int status;
-	if(sdb->pid == -1) {
+	if(!sdb_is_running(sdb)) {
 		if((sdb->pid = fork()) < 0) {
 			perror("Failed to fork");
 			return;
@@ -226,6 +269,8 @@ void sdb_run(SDB* sdb) {
 	sdb->pid = -1;
 }
 
+//TODO: if the addr_str is empty && there exists a succussful previous run, disasm the same addr
+// as the privious run
 void sdb_disasm(SDB* sdb, char* addr_str) {
 	if(strcmp(addr_str, "") == 0) {
 		puts("** no addr is given");
@@ -237,10 +282,10 @@ void sdb_disasm(SDB* sdb, char* addr_str) {
 	unsigned long long addr;
 	sscanf(addr_str, "%llx", &addr);
 
-	char buffer[64] = {0};
 
+	char buffer[64] = {0};
 	unsigned long long ptr;
-	if(sdb->pid == -1) {
+	if(!sdb_is_running(sdb)) {
 		//not running, read from file
 
 		// find that the addr is located in which section 
@@ -266,6 +311,18 @@ void sdb_disasm(SDB* sdb, char* addr_str) {
 		fclose(fp);
 	} else {
 		//running
+		//restore changes caused by break points
+		int i;
+		for(i = 0; i < MAX_BREAK; ++i) {
+			bp_t* bp = &(sdb->breaks[i]);
+			if(bp->is_used) {
+				if(ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, 
+					bp->original_word) != 0) {
+					puts("failed to patch the code");
+				}
+			}
+		}
+
 		for(ptr = addr; ptr < addr + sizeof(buffer); ptr += 8) {
 			unsigned long long peek;
 			errno = 0;
@@ -273,6 +330,17 @@ void sdb_disasm(SDB* sdb, char* addr_str) {
 			if(errno != 0)
 				break;
 			memcpy(&buffer[ptr-addr], &peek, 8);
+		}
+
+		//restore breaks
+		for(i = 0; i < MAX_BREAK; ++i) {
+			bp_t* bp = &(sdb->breaks[i]);
+			if(bp->is_used) {
+				if(ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, 
+					(bp->original_word & 0xffffffffffffff00) | 0xcc) != 0) {
+					puts("failed to patch the code");
+				}
+			}
 		}
 	}
 
@@ -288,7 +356,7 @@ void sdb_disasm(SDB* sdb, char* addr_str) {
 				strcat(bytes_str, byte);
 			}
 
-			printf("%10lx: %-20s", insn[i].address, bytes_str);
+			printf("%10lx: %-21s", insn[i].address, bytes_str);
 			printf("%-7s%s\n", insn[i].mnemonic, insn[i].op_str);
 		}
 		cs_free(insn, count);
@@ -302,7 +370,7 @@ void sdb_dump(SDB* sdb, char* addr_str) {
 		puts("** no addr is given");
 		return;
 	}
-	if(sdb->pid == -1) {
+	if(!sdb_is_running(sdb)) {
 		puts("not running");
 		return;
 	}
@@ -339,5 +407,40 @@ void sdb_dump(SDB* sdb, char* addr_str) {
 				printf(".");
 		}
 		printf("|\n");
+	}
+}
+
+//TODO: set the bp when program is loaded but not running
+void sdb_set_break(SDB* sdb, char* addr_str) {
+	if(!sdb_is_loaded(sdb)) {
+		puts("No program loaded");
+		return;
+	}
+
+	if(addr_str[1] == 'x')
+		addr_str += 2;
+	unsigned long long addr;
+	sscanf(addr_str, "%llx", &addr);
+
+	if(sdb_is_running(sdb)) {
+		int i;
+		bp_t* bp;
+		for(i = 0; i < MAX_BREAK; ++i) {
+			if(!(sdb->breaks[i].is_used)) {
+				bp = &(sdb->breaks[i]);
+				break;
+			}
+		}
+
+		bp->is_used = 1;
+		bp->addr = addr;
+		bp->original_word = ptrace(PTRACE_PEEKTEXT, sdb->pid, addr, 0);
+
+		if(ptrace(PTRACE_POKETEXT, sdb->pid, addr, 
+			(bp->original_word & 0xffffffffffffff00) | 0xcc) != 0) {
+			puts("failed to patch the code");
+			return;
+		}
+	} else {
 	}
 }
