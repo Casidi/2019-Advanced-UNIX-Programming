@@ -44,13 +44,11 @@ int main(int argc, char** argv) {
 	sdb_disasm(sdb, "0x985");
 	sdb_disasm(sdb, "");
 	sdb_set_break(sdb, "0x9cc");
-	sdb_list(sdb);
 	sdb_start(sdb);
 	sdb_vmmap(sdb);
 	sdb_cont(sdb);
 	sdb_get(sdb, "rax");
 	unsigned long long val = sdb_get(sdb, "rdx");
-	printf("val = %llx\n", val);
 	sdb_set(sdb, "rax", val);
 	sdb_cont(sdb);
 

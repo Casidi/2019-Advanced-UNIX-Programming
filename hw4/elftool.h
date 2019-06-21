@@ -62,7 +62,6 @@ typedef struct elf_handle_s {
 	int shnum;		// # of sections
 	int shstrndx;		// section header string table index
 	long entrypoint;	// entrypoint
-	//int type;
 	union {
 		void *ptr;
 		Elf32_Ehdr *ptr32;
@@ -74,7 +73,7 @@ typedef struct elf_handle_s {
 	elf_shdr_t *shdr;	// section header
 	elf_strtab_t *strtab;	// string table
 	elf_symtab_t *sym, *dsym; // symbol table and dynamic symbol table
-
+	int type;
 }	elf_handle_t;
 
 void elf_perror(const char *prefix);

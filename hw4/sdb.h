@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
+#include <libgen.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
@@ -25,7 +26,67 @@ typedef struct {
 	char path[128];
 	pid_t pid;
 	bp_t breaks[MAX_BREAK];
+	unsigned long long last_disasm_addr;
 } SDB;
+
+unsigned long long convert_dynamic_addr(SDB* sdb, unsigned long long addr) {
+	char proc_info_path[64];
+	char* line = NULL;
+	size_t len = 0;
+	sprintf(proc_info_path, "/proc/%d/maps", sdb->pid);
+	FILE* fp = fopen(proc_info_path, "r");
+	int is_executable = 0;
+	int is_exe_area = 0;
+	unsigned long long base_addr;
+	while(getline(&line, &len, fp) != -1) {
+		char* token = strtok(line, " \n");
+		int count = 0;
+		is_executable = 0;
+		is_exe_area = 0;
+		while(token != NULL) {
+			switch(count) {
+			case 0: {
+				char *second = strchr(token, '-');
+				*second = 0;
+				second++;
+				unsigned long long begin, end;
+				sscanf(token, "%llx", &begin);
+				sscanf(second, "%llx", &end);
+				//printf("%016llx-%016llx ", begin, end);
+				base_addr = begin;
+				break;
+			}
+			case 1:
+				token[3] = 0;
+				if(strcmp(token, "r-x") == 0)
+					is_executable = 1;
+				break;
+			case 2: {
+				unsigned int offset;
+				sscanf(token, "%x", &offset);
+				break;
+			}
+			case 5:
+				if(strcmp(basename(token), basename(sdb->path)) == 0)
+					is_exe_area = 1;
+				break;
+			default:
+				break;
+			}
+
+			count++;
+			token = strtok(NULL, " \n");
+		}
+		if(is_executable && is_exe_area) {
+			break;
+		}
+	}
+	if(line)
+		free(line);
+	fclose(fp);
+
+	return base_addr + addr;
+}
 
 SDB* sdb_create() {
 	SDB* sdb = (SDB*)malloc(sizeof(SDB));
@@ -40,6 +101,7 @@ SDB* sdb_create() {
 	int i;
 	for(i = 0; i < MAX_BREAK; ++i)
 		sdb->breaks[i].is_used = 0;
+	sdb->last_disasm_addr = 0;
 
 	return sdb;
 }
@@ -92,6 +154,7 @@ void sdb_load(SDB* sdb, char* new_filename) {
 	int i;
 	for(i = 0; i < MAX_BREAK; ++i)
 		sdb->breaks[i].is_used = 0;
+	sdb->last_disasm_addr = 0;
 }
 
 void print_vm_maps(char* line) {
@@ -164,19 +227,60 @@ void sdb_vmmap(SDB* sdb) {
 	}
 }
 
+#define MATCH_REG_NAME(r) if(strcmp(reg_name, #r) == 0) reg_val = regs.r;
+unsigned long long sdb_get(SDB* sdb, char* reg_name) {
+	struct user_regs_struct regs;
+	ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
+
+	unsigned long long reg_val;
+	MATCH_REG_NAME(rax);
+	MATCH_REG_NAME(rbx);
+	MATCH_REG_NAME(rcx);
+	MATCH_REG_NAME(rdx);
+	MATCH_REG_NAME(r8);
+	MATCH_REG_NAME(r9);
+	MATCH_REG_NAME(r10);
+	MATCH_REG_NAME(r11);
+	MATCH_REG_NAME(r12);
+	MATCH_REG_NAME(r13);
+	MATCH_REG_NAME(r14);
+	MATCH_REG_NAME(r15);
+	MATCH_REG_NAME(rdi);
+	MATCH_REG_NAME(rsi);
+	MATCH_REG_NAME(rbp);
+	MATCH_REG_NAME(rsp);
+	MATCH_REG_NAME(rip);
+	MATCH_REG_NAME(eflags);
+	printf("%s = %llu (0x%llx)\n", reg_name, reg_val, reg_val);
+	return reg_val;
+}
+
+
 void sdb_patch_all_bp(SDB* sdb) {
 	int i;
 	for(i = 0; i < MAX_BREAK; ++i) {
 		bp_t* bp = &(sdb->breaks[i]);
 		if(bp->is_used) {
-			unsigned long long word = ptrace(PTRACE_PEEKTEXT, sdb->pid, bp->addr, 0);
+			//printf("type = %d\n", sdb->eh->type);
+			unsigned long long addr = bp->addr;
+			if(sdb->eh->type == 3) {
+				addr = convert_dynamic_addr(sdb, addr);
+			}
+
+			struct user_regs_struct regs;
+			ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
+			if(regs.rip == addr) {
+				ptrace(PTRACE_SINGLESTEP, sdb->pid, 0,0);
+				if(waitpid(sdb->pid, 0, 0) < 0)
+					puts("Failed to wait");
+			}
+
+			unsigned long long word = ptrace(PTRACE_PEEKTEXT, sdb->pid, addr, 0);
 			if ((word & 0xff) == 0xcc)
 				continue;
 			bp->original_word = word;
 
-			//printf("type = %d\n", sdb->eh->type);
-
-			if(ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, 
+			if(ptrace(PTRACE_POKETEXT, sdb->pid, addr, 
 				(bp->original_word & 0xffffffffffffff00) | 0xcc) != 0) {
 				puts("failed to patch the code");
 				return;
@@ -217,33 +321,6 @@ void sdb_start(SDB* sdb) {
 	sdb_patch_all_bp(sdb);
 }
 
-#define MATCH_REG_NAME(r) if(strcmp(reg_name, #r) == 0) reg_val = regs.r;
-unsigned long long sdb_get(SDB* sdb, char* reg_name) {
-	struct user_regs_struct regs;
-	ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
-
-	unsigned long long reg_val;
-	MATCH_REG_NAME(rax);
-	MATCH_REG_NAME(rbx);
-	MATCH_REG_NAME(rcx);
-	MATCH_REG_NAME(rdx);
-	MATCH_REG_NAME(r8);
-	MATCH_REG_NAME(r9);
-	MATCH_REG_NAME(r10);
-	MATCH_REG_NAME(r11);
-	MATCH_REG_NAME(r12);
-	MATCH_REG_NAME(r13);
-	MATCH_REG_NAME(r14);
-	MATCH_REG_NAME(r15);
-	MATCH_REG_NAME(rdi);
-	MATCH_REG_NAME(rsi);
-	MATCH_REG_NAME(rbp);
-	MATCH_REG_NAME(rsp);
-	MATCH_REG_NAME(rip);
-	MATCH_REG_NAME(eflags);
-	printf("%s = %llu (0x%llx)\n", reg_name, reg_val, reg_val);
-	return reg_val;
-}
 
 void sdb_getregs(SDB* sdb) {
 	struct user_regs_struct regs;
@@ -274,16 +351,19 @@ void sdb_cont(SDB* sdb) {
 		int i;
 		for(i = 0; i < MAX_BREAK; ++i) {
 			bp_t* bp = &(sdb->breaks[i]);
-			if(bp->is_used && bp->addr == (regs.rip-1)) {
-				ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, bp->original_word);
+			unsigned long long vaddr = bp->addr;
+			if(sdb->eh->type == 3)
+				vaddr = convert_dynamic_addr(sdb, vaddr);
+			if(bp->is_used && vaddr == (regs.rip-1)) {
+				ptrace(PTRACE_POKETEXT, sdb->pid, vaddr, bp->original_word);
 				regs.rip--;
 				ptrace(PTRACE_SETREGS, sdb->pid, 0, &regs);
 
 				unsigned long long buffer;
-				buffer = ptrace(PTRACE_PEEKTEXT, sdb->pid, bp->addr, 0);
+				buffer = ptrace(PTRACE_PEEKTEXT, sdb->pid, vaddr, 0);
 				cs_insn *insn;
 				size_t count;
-				if((count = cs_disasm(sdb->cshandle, (uint8_t*)&buffer, 8, bp->addr, 0, &insn)) > 0) {
+				if((count = cs_disasm(sdb->cshandle, (uint8_t*)&buffer, 8, vaddr, 0, &insn)) > 0) {
 					char bytes_str[16] = "";
 					char byte[8];
 					for(int j = 0; j < insn[0].size; ++j) {
@@ -355,16 +435,20 @@ void sdb_run(SDB* sdb) {
 		int i;
 		for(i = 0; i < MAX_BREAK; ++i) {
 			bp_t* bp = &(sdb->breaks[i]);
-			if(bp->is_used && bp->addr == (regs.rip-1)) {
-				ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, bp->original_word);
+			unsigned long long vaddr = bp->addr;
+			if(sdb->eh->type == 3)
+				vaddr = convert_dynamic_addr(sdb, vaddr);
+
+			if(bp->is_used && vaddr == (regs.rip-1)) {
+				ptrace(PTRACE_POKETEXT, sdb->pid, vaddr, bp->original_word);
 				regs.rip--;
 				ptrace(PTRACE_SETREGS, sdb->pid, 0, &regs);
 
 				unsigned long long buffer;
-				buffer = ptrace(PTRACE_PEEKTEXT, sdb->pid, bp->addr, 0);
+				buffer = ptrace(PTRACE_PEEKTEXT, sdb->pid, vaddr, 0);
 				cs_insn *insn;
 				size_t count;
-				if((count = cs_disasm(sdb->cshandle, (uint8_t*)&buffer, 8, bp->addr, 0, &insn)) > 0) {
+				if((count = cs_disasm(sdb->cshandle, (uint8_t*)&buffer, 8, vaddr, 0, &insn)) > 0) {
 					char bytes_str[16] = "";
 					char byte[8];
 					for(int j = 0; j < insn[0].size; ++j) {
@@ -412,16 +496,20 @@ void sdb_set(SDB* sdb, char* reg_name, unsigned long long val) {
 //TODO: if the addr_str is empty && there exists a succussful previous run, disasm the same addr
 // as the privious run
 void sdb_disasm(SDB* sdb, char* addr_str) {
-	if(strcmp(addr_str, "") == 0) {
-		puts("** no addr is given");
-		return;
-	}
-
-	if(addr_str[1] == 'x')
-		addr_str += 2;
 	unsigned long long addr;
-	sscanf(addr_str, "%llx", &addr);
-
+	if(strcmp(addr_str, "") == 0) {
+		if (sdb->last_disasm_addr == 0x0) {
+			puts("** no addr is given");
+			return;
+		} else {
+			addr = sdb->last_disasm_addr;
+		}
+	} else {
+		if(addr_str[1] == 'x')
+			addr_str += 2;
+		sscanf(addr_str, "%llx", &addr);
+		sdb->last_disasm_addr = addr;
+	}
 
 	char buffer[64] = {0};
 	unsigned long long ptr;
@@ -487,6 +575,7 @@ void sdb_disasm(SDB* sdb, char* addr_str) {
 				strcat(bytes_str, byte);
 			}
 
+			sdb->last_disasm_addr += insn[i].size;
 			printf("%10lx: %-21s", insn[i].address, bytes_str);
 			printf("%-7s%s\n", insn[i].mnemonic, insn[i].op_str);
 		}
@@ -541,6 +630,7 @@ void sdb_dump(SDB* sdb, char* addr_str) {
 	}
 }
 
+
 void sdb_set_break(SDB* sdb, char* addr_str) {
 	if(!sdb_is_loaded(sdb)) {
 		puts("No program loaded");
@@ -551,6 +641,7 @@ void sdb_set_break(SDB* sdb, char* addr_str) {
 		addr_str += 2;
 	unsigned long long addr;
 	sscanf(addr_str, "%llx", &addr);
+
 
 	int i;
 	bp_t* bp;
