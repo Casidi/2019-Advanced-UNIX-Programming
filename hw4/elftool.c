@@ -45,6 +45,7 @@ elf_open(const char *filename) {
 	if(ident[4] == 0x01) { // 32-bit
 		e->clazz = ELFCLASS32;
 		e->ehdr.ptr = elf32_getehdr(elf);
+		//e->type = elf32_getehdr(elf)->e_type;
 		e->phnum = e->ehdr.ptr32->e_phnum;
 		e->shnum = e->ehdr.ptr32->e_shnum;
 		e->shstrndx = e->ehdr.ptr32->e_shstrndx;
@@ -52,6 +53,7 @@ elf_open(const char *filename) {
 	} else if(ident[4] == 0x02) { // 64-bit
 		e->clazz = ELFCLASS64;
 		e->ehdr.ptr = elf64_getehdr(elf);
+		//e->type = elf64_getehdr(elf)->e_type;
 		e->phnum = e->ehdr.ptr64->e_phnum;
 		e->shnum = e->ehdr.ptr64->e_shnum;
 		e->shstrndx = e->ehdr.ptr64->e_shstrndx;

@@ -62,6 +62,7 @@ typedef struct elf_handle_s {
 	int shnum;		// # of sections
 	int shstrndx;		// section header string table index
 	long entrypoint;	// entrypoint
+	//int type;
 	union {
 		void *ptr;
 		Elf32_Ehdr *ptr32;

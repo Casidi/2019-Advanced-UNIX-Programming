@@ -89,6 +89,9 @@ void sdb_load(SDB* sdb, char* new_filename) {
 
 	sdb->pid = -1;
 	strcpy(sdb->path, new_filename);
+	int i;
+	for(i = 0; i < MAX_BREAK; ++i)
+		sdb->breaks[i].is_used = 0;
 }
 
 void print_vm_maps(char* line) {
@@ -161,12 +164,34 @@ void sdb_vmmap(SDB* sdb) {
 	}
 }
 
+void sdb_patch_all_bp(SDB* sdb) {
+	int i;
+	for(i = 0; i < MAX_BREAK; ++i) {
+		bp_t* bp = &(sdb->breaks[i]);
+		if(bp->is_used) {
+			unsigned long long word = ptrace(PTRACE_PEEKTEXT, sdb->pid, bp->addr, 0);
+			if ((word & 0xff) == 0xcc)
+				continue;
+			bp->original_word = word;
+
+			//printf("type = %d\n", sdb->eh->type);
+
+			if(ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, 
+				(bp->original_word & 0xffffffffffffff00) | 0xcc) != 0) {
+				puts("failed to patch the code");
+				return;
+			}
+		}
+	}
+}
+
 void sdb_start(SDB* sdb) {
 	if(!sdb_is_loaded(sdb)) {
 		printf("No program loaded\n");
 		return;
 	}
 
+	int status;
 	if((sdb->pid = fork()) < 0) {
 		perror("Failed to fork");
 		return;
@@ -181,7 +206,6 @@ void sdb_start(SDB* sdb) {
 		perror("execlp");
 		exit(-1);
 	} else {
-		int status;
 		if(waitpid(sdb->pid, &status, 0) < 0) {
 			printf("waitpid failed\n");
 			return;
@@ -189,10 +213,12 @@ void sdb_start(SDB* sdb) {
 		ptrace(PTRACE_SETOPTIONS, sdb->pid, 0, PTRACE_O_EXITKILL);
 		printf("** pid %d\n", sdb->pid);
 	}
+
+	sdb_patch_all_bp(sdb);
 }
 
 #define MATCH_REG_NAME(r) if(strcmp(reg_name, #r) == 0) reg_val = regs.r;
-void sdb_get(SDB* sdb, char* reg_name) {
+unsigned long long sdb_get(SDB* sdb, char* reg_name) {
 	struct user_regs_struct regs;
 	ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
 
@@ -216,6 +242,7 @@ void sdb_get(SDB* sdb, char* reg_name) {
 	MATCH_REG_NAME(rip);
 	MATCH_REG_NAME(eflags);
 	printf("%s = %llu (0x%llx)\n", reg_name, reg_val, reg_val);
+	return reg_val;
 }
 
 void sdb_getregs(SDB* sdb) {
@@ -226,6 +253,61 @@ void sdb_getregs(SDB* sdb) {
 	printf("R12 %-18llxR13 %-18llxR14 %-18llxR15 %-18llx\n", regs.r12, regs.r13, regs.r14, regs.r15);
 	printf("RDI %-18llxRSI %-18llxRBP %-18llxRSP %-18llx\n", regs.rdi, regs.rsi, regs.rbp, regs.rsp);
 	printf("RIP %-18llxFLAGS %016llx\n", regs.rip, regs.eflags);
+}
+
+void sdb_cont(SDB* sdb) {
+	if(!sdb_is_running(sdb)) {
+		puts("not running");
+		return;
+	}
+	
+	sdb_patch_all_bp(sdb);
+
+	int status;
+	ptrace(PTRACE_CONT, sdb->pid, 0, 0);
+	while(waitpid(sdb->pid, &status, 0) > 0) {
+		if(!WIFSTOPPED(status))
+			continue;
+		struct user_regs_struct regs;
+		ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
+
+		int i;
+		for(i = 0; i < MAX_BREAK; ++i) {
+			bp_t* bp = &(sdb->breaks[i]);
+			if(bp->is_used && bp->addr == (regs.rip-1)) {
+				ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, bp->original_word);
+				regs.rip--;
+				ptrace(PTRACE_SETREGS, sdb->pid, 0, &regs);
+
+				unsigned long long buffer;
+				buffer = ptrace(PTRACE_PEEKTEXT, sdb->pid, bp->addr, 0);
+				cs_insn *insn;
+				size_t count;
+				if((count = cs_disasm(sdb->cshandle, (uint8_t*)&buffer, 8, bp->addr, 0, &insn)) > 0) {
+					char bytes_str[16] = "";
+					char byte[8];
+					for(int j = 0; j < insn[0].size; ++j) {
+						sprintf(byte, "%02x ", insn[0].bytes[j]);
+						strcat(bytes_str, byte);
+					}
+
+					printf("** breakpoint @ %10lx: %-21s", insn[0].address, bytes_str);
+					printf("%-7s%s\n", insn[0].mnemonic, insn[i].op_str);
+					cs_free(insn, count);
+				} else {
+					printf("ERROR: Failed to disassemble given code!\n");
+				}
+
+				return;
+			}
+		}
+	}
+
+	if(status == 0)
+		printf("** child process %d terminated normally (code %d)\n", sdb->pid, status);
+	else
+		printf("** child process %d exited with error (code %d)\n", sdb->pid, status);
+	sdb->pid = -1;
 }
 
 void sdb_run(SDB* sdb) {
@@ -255,18 +337,76 @@ void sdb_run(SDB* sdb) {
 				return;
 			}
 			ptrace(PTRACE_SETOPTIONS, sdb->pid, 0, PTRACE_O_EXITKILL);
+			printf("** pid %d\n", sdb->pid);
 		}
 	} else {
 		printf("** program %s is already running.\n", sdb->path);
 	}
 
+	sdb_patch_all_bp(sdb);
+
 	ptrace(PTRACE_CONT, sdb->pid, 0, 0);
-	waitpid(sdb->pid, &status, 0);
+	while(waitpid(sdb->pid, &status, 0) > 0) {
+		if(!WIFSTOPPED(status))
+			continue;
+		struct user_regs_struct regs;
+		ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
+
+		int i;
+		for(i = 0; i < MAX_BREAK; ++i) {
+			bp_t* bp = &(sdb->breaks[i]);
+			if(bp->is_used && bp->addr == (regs.rip-1)) {
+				ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, bp->original_word);
+				regs.rip--;
+				ptrace(PTRACE_SETREGS, sdb->pid, 0, &regs);
+
+				unsigned long long buffer;
+				buffer = ptrace(PTRACE_PEEKTEXT, sdb->pid, bp->addr, 0);
+				cs_insn *insn;
+				size_t count;
+				if((count = cs_disasm(sdb->cshandle, (uint8_t*)&buffer, 8, bp->addr, 0, &insn)) > 0) {
+					char bytes_str[16] = "";
+					char byte[8];
+					for(int j = 0; j < insn[0].size; ++j) {
+						sprintf(byte, "%02x ", insn[0].bytes[j]);
+						strcat(bytes_str, byte);
+					}
+
+					printf("** breakpoint @ %10lx: %-21s", insn[0].address, bytes_str);
+					printf("%-7s%s\n", insn[0].mnemonic, insn[i].op_str);
+					cs_free(insn, count);
+				} else {
+					printf("ERROR: Failed to disassemble given code!\n");
+				}
+				return;
+			}
+		}
+	}
+
 	if(status == 0)
 		printf("** child process %d terminated normally (code %d)\n", sdb->pid, status);
 	else
 		printf("** child process %d exited with error (code %d)\n", sdb->pid, status);
 	sdb->pid = -1;
+}
+
+//TODO: set val according to reg_name
+void sdb_set(SDB* sdb, char* reg_name, unsigned long long val) {
+	struct user_regs_struct regs;
+	ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
+	if(strcmp(reg_name, "rip") == 0) {
+		regs.rip = val;
+	}
+	if(strcmp(reg_name, "rax") == 0) {
+		regs.rax = val;
+	}
+	if(strcmp(reg_name, "rdx") == 0) {
+		regs.rdx = val;
+	}
+	if(ptrace(PTRACE_SETREGS, sdb->pid, 0, &regs) != 0) {
+		puts("Failed to set regs");
+		return;
+	}
 }
 
 //TODO: if the addr_str is empty && there exists a succussful previous run, disasm the same addr
@@ -332,16 +472,7 @@ void sdb_disasm(SDB* sdb, char* addr_str) {
 			memcpy(&buffer[ptr-addr], &peek, 8);
 		}
 
-		//restore breaks
-		for(i = 0; i < MAX_BREAK; ++i) {
-			bp_t* bp = &(sdb->breaks[i]);
-			if(bp->is_used) {
-				if(ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, 
-					(bp->original_word & 0xffffffffffffff00) | 0xcc) != 0) {
-					puts("failed to patch the code");
-				}
-			}
-		}
+		sdb_patch_all_bp(sdb);
 	}
 
 	cs_insn *insn;
@@ -410,7 +541,6 @@ void sdb_dump(SDB* sdb, char* addr_str) {
 	}
 }
 
-//TODO: set the bp when program is loaded but not running
 void sdb_set_break(SDB* sdb, char* addr_str) {
 	if(!sdb_is_loaded(sdb)) {
 		puts("No program loaded");
@@ -422,25 +552,40 @@ void sdb_set_break(SDB* sdb, char* addr_str) {
 	unsigned long long addr;
 	sscanf(addr_str, "%llx", &addr);
 
-	if(sdb_is_running(sdb)) {
-		int i;
-		bp_t* bp;
-		for(i = 0; i < MAX_BREAK; ++i) {
-			if(!(sdb->breaks[i].is_used)) {
-				bp = &(sdb->breaks[i]);
-				break;
-			}
+	int i;
+	bp_t* bp;
+	for(i = 0; i < MAX_BREAK; ++i) {
+		if(!(sdb->breaks[i].is_used)) {
+			bp = &(sdb->breaks[i]);
+			break;
+		}
+	}
+
+	bp->is_used = 1;
+	bp->addr = addr;
+
+	if(sdb_is_running(sdb))
+		sdb_patch_all_bp(sdb);
+}
+
+void sdb_list(SDB* sdb) {
+	int i;
+	for(i = 0; i < MAX_BREAK; ++i) {
+		bp_t* bp = &(sdb->breaks[i]);
+		if(bp->is_used)
+			printf("%4d: %llx\n", i, bp->addr);
+	}
+}
+
+void sdb_delete(SDB* sdb, int index) {
+	if(index >= 0 && index < MAX_BREAK && sdb->breaks[index].is_used) {
+		bp_t* bp = &(sdb->breaks[index]);
+		unsigned long long word = ptrace(PTRACE_PEEKTEXT, sdb->pid, bp->addr, 0);
+		if ((word & 0xff) == 0xcc) {
+			ptrace(PTRACE_POKETEXT, sdb->pid, bp->addr, bp->original_word);
 		}
 
-		bp->is_used = 1;
-		bp->addr = addr;
-		bp->original_word = ptrace(PTRACE_PEEKTEXT, sdb->pid, addr, 0);
-
-		if(ptrace(PTRACE_POKETEXT, sdb->pid, addr, 
-			(bp->original_word & 0xffffffffffffff00) | 0xcc) != 0) {
-			puts("failed to patch the code");
-			return;
-		}
-	} else {
+		bp->is_used = 0;
+		printf("** breakpoint %d deleted.\n", index);
 	}
 }

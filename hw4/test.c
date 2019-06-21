@@ -30,13 +30,13 @@ int main(int argc, char** argv) {
 	sdb_load(sdb, "sample/hello64");
 	sdb_disasm(sdb, "0x4000b0");
 	sdb_set_break(sdb, "0x4000c6");
-	//sdb_list(sdb);
+	sdb_list(sdb);
 	sdb_run(sdb);
-	//sdb_set(sdb, "rip", 0x4000b0);
-	//sdb_cont(sdb);
-	//sdb_delete(sdb, 0);
-	//sdb_set(sdb, "rip", 0x4000b0);
-	//sdb_cont(sdb);
+	sdb_set(sdb, "rip", 0x4000b0);
+	sdb_cont(sdb);
+	sdb_delete(sdb, 0);
+	sdb_set(sdb, "rip", 0x4000b0);
+	sdb_cont(sdb);
 
 	puts("\nTest Case 5...");
 	sdb_load(sdb, "sample/guess");
@@ -44,13 +44,15 @@ int main(int argc, char** argv) {
 	sdb_disasm(sdb, "0x985");
 	sdb_disasm(sdb, "");
 	sdb_set_break(sdb, "0x9cc");
+	sdb_list(sdb);
 	sdb_start(sdb);
 	sdb_vmmap(sdb);
-	//sdb_cont(sdb);
+	sdb_cont(sdb);
 	sdb_get(sdb, "rax");
-	sdb_get(sdb, "rdx");
-	//sdb_set(sdb, "rax", 17624781);
-	//sdb_cont(sdb);
+	unsigned long long val = sdb_get(sdb, "rdx");
+	printf("val = %llx\n", val);
+	sdb_set(sdb, "rax", val);
+	sdb_cont(sdb);
 
 	return 0;
 }
