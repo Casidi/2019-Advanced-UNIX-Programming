@@ -1,8 +1,8 @@
 all: elftool.o
-	gcc -o sdb main.c elftool.o -lelf
+	gcc -o sdb main.c elftool.o -lelf -lcapstone
 
 test: elftool.o test.c sdb.h
-	gcc -g -o test test.c elftool.o -lelf
+	gcc -g -o test test.c elftool.o -lelf -lcapstone
 	./test
 
 elftool.o:

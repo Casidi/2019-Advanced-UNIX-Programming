@@ -20,6 +20,10 @@ int main(int argc, char** argv) {
 	puts("\nTest Case 3...");
 	sdb_load(sdb, "sample/hello64");
 	sdb_disasm(sdb, "");
+	sdb_disasm(sdb, "0x4000b0");
+	sdb_start(sdb);
+	sdb_disasm(sdb, "0x4000c6");
+	sdb_dump(sdb, "0x4000c6");
 
 	return 0;
 }
