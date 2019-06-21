@@ -474,29 +474,37 @@ void sdb_run(SDB* sdb) {
 	sdb->pid = -1;
 }
 
-//TODO: set val according to reg_name
+#define SET_IF_MATCHED(r) if(strcmp(reg_name, #r) == 0) regs.r = val;
 void sdb_set(SDB* sdb, char* reg_name, unsigned long long val) {
 	struct user_regs_struct regs;
 	ptrace(PTRACE_GETREGS, sdb->pid, 0, &regs);
-	if(strcmp(reg_name, "rip") == 0) {
-		regs.rip = val;
-	}
-	if(strcmp(reg_name, "rax") == 0) {
-		regs.rax = val;
-	}
-	if(strcmp(reg_name, "rdx") == 0) {
-		regs.rdx = val;
-	}
+	SET_IF_MATCHED(rax);
+	SET_IF_MATCHED(rbx);
+	SET_IF_MATCHED(rcx);
+	SET_IF_MATCHED(rdx);
+	SET_IF_MATCHED(r8);
+	SET_IF_MATCHED(r9);
+	SET_IF_MATCHED(r10);
+	SET_IF_MATCHED(r11);
+	SET_IF_MATCHED(r12);
+	SET_IF_MATCHED(r13);
+	SET_IF_MATCHED(r14);
+	SET_IF_MATCHED(r15);
+	SET_IF_MATCHED(rdi);
+	SET_IF_MATCHED(rsi);
+	SET_IF_MATCHED(rbp);
+	SET_IF_MATCHED(rsp);
+	SET_IF_MATCHED(rip);
+	SET_IF_MATCHED(eflags);
 	if(ptrace(PTRACE_SETREGS, sdb->pid, 0, &regs) != 0) {
 		puts("Failed to set regs");
 		return;
 	}
 }
 
-//TODO: if the addr_str is empty && there exists a succussful previous run, disasm the same addr
-// as the privious run
 void sdb_disasm(SDB* sdb, char* addr_str) {
 	unsigned long long addr;
+	puts(addr_str);
 	if(strcmp(addr_str, "") == 0) {
 		if (sdb->last_disasm_addr == 0x0) {
 			puts("** no addr is given");
@@ -679,4 +687,18 @@ void sdb_delete(SDB* sdb, int index) {
 		bp->is_used = 0;
 		printf("** breakpoint %d deleted.\n", index);
 	}
+}
+
+void sdb_step(SDB* sdb) {
+	if(!sdb_is_running(sdb)) {
+		puts("Not running");
+		return;
+	}
+
+	if(ptrace(PTRACE_SINGLESTEP, sdb->pid, 0,0) < 0) {
+		puts("Step failed");
+		return;
+	}
+	if(waitpid(sdb->pid, 0, 0) < 0)
+		puts("Failed to wait");
 }

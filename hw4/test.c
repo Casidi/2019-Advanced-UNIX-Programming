@@ -52,5 +52,11 @@ int main(int argc, char** argv) {
 	sdb_set(sdb, "rax", val);
 	sdb_cont(sdb);
 
+	puts("\nTest Case 6...Test step command");
+	sdb_load(sdb, "sample/hello64");
+	sdb_start(sdb);
+	for(int i = 0; i < 10; ++i)
+		sdb_step(sdb);
+
 	return 0;
 }
